@@ -53,3 +53,4 @@ app.*.map.json
 /pocketbase/CHANGELOG.md
 /pocketbase/LICENSE.md
 __pycache__/
+/report/
