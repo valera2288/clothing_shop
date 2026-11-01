@@ -1,0 +1,64 @@
+name: Сборка и публикация
+
+# Сборка при каждом изменении основной ветки. Публикация идёт на GitHub Pages.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Одновременно выполняется только одна публикация
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # Те же проверки, что и локально: сборка не уйдёт на сайт с замечаниями
+      - run: flutter analyze
+      - run: dart format --set-exit-if-changed lib test
+      - run: flutter test
+
+      # Адрес API берётся из переменной репозитория API_BASE_URL
+      # (Settings → Secrets and variables → Actions → Variables).
+      # Базовый путь равен имени репозитория: сайт лежит в подкаталоге.
+      - name: Сборка
+        run: |
+          flutter build web --release \
+            --base-href "/${{ github.event.repository.name }}/" \
+            --dart-define=API_BASE_URL=${{ vars.API_BASE_URL }}
+
+      # GitHub Pages не перенаправляет неизвестные пути на index.html,
+      # но отдаёт 404.html. Копия index.html заставляет приложение загрузиться
+      # и самому разобрать адрес, поэтому прямые ссылки и обновление работают.
+      - name: Копия index.html как 404.html
+        run: cp build/web/index.html build/web/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
