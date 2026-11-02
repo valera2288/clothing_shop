@@ -24,7 +24,7 @@
 PocketBase отвечает 400 с `data.<поле>.code`. `mapHttpError` создаёт `ValidationException` с русскими текстами по полям, `EntityForm` (`lib/widgets/entity_form.dart`) показывает текст под полем по имени поля и снимает его, когда пользователь правит поле.
 
 **Самый слабый фрагмент кода.**
-`PbOrderRepository.place` (`lib/repositories/pb/pb_repositories.dart`): у REST API PocketBase нет транзакций, поэтому оформление — цепочка запросов. При сбое посередине заказ переводится в `cancelled`, но остаток уже мог уменьшиться. Итог заказа считает клиент, а сервер проверяет только пределы поля. Исправление — серверный хук или SQL-транзакция на стороне сервера.
+Слабым местом было оформление заказа цепочкой запросов без транзакции и с итогом, который считал клиент. Теперь `PbOrderRepository.place` отправляет один `POST /batch`, а остаток и итог считают серверные хуки (`pocketbase/pb_hooks`). Остались: у хуков нет автоматических тестов, токен лежит в localStorage, корзина живёт только в браузере.
 
 **Объяснить любую строку файла.**
 Файлы небольшие, у каждого класса есть комментарий. Начинать лучше с `lib/main.dart` → `core/router.dart` → `entities/entity_defs.dart` → `screens/entity/entity_list_screen.dart` → `repositories/pb/pb_repository.dart`.

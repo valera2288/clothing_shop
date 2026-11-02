@@ -102,6 +102,27 @@ ApiException mapHttpError(int status, dynamic body) {
       ? body['message'] as String
       : null;
   final data = (body is Map && body['data'] is Map) ? body['data'] as Map : {};
+  // Пакетный запрос откатывается целиком: причина лежит в data.requests.<номер>
+  if (status == 400 && data['requests'] is Map) {
+    for (final r in (data['requests'] as Map).values) {
+      final inner =
+          (r is Map && r['response'] is Map) ? r['response'] as Map : const {};
+      final text = inner['message'];
+      if (text is String && text.contains('склад')) {
+        return ConflictException(text);
+      }
+      final fields = inner['data'];
+      if (fields is Map && fields.isNotEmpty) {
+        return ValidationException(
+          'Сервер отклонил данные',
+          fields.map((k, v) => MapEntry('$k', _fieldError(v))),
+        );
+      }
+    }
+    return const ForbiddenException(
+      'Сервер отклонил операцию: недостаточно прав или данные неверны.',
+    );
+  }
   return switch (status) {
     400 when data.isNotEmpty => ValidationException(
         'Сервер отклонил данные',

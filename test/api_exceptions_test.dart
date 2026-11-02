@@ -52,6 +52,27 @@ void main() {
     expect(e, isA<ConflictException>());
   });
 
+  test(
+      'откат пакетного запроса из-за нехватки товара — конфликт с текстом сервера',
+      () {
+    final e = mapHttpError(400, {
+      'message': 'Batch transaction failed.',
+      'data': {
+        'requests': {
+          '1': {
+            'code': 'batch_request_failed',
+            'response': {
+              'message': 'Недостаточно товара на складе: Парка',
+              'data': {},
+            },
+          },
+        },
+      },
+    });
+    expect(e, isA<ConflictException>());
+    expect(e.message, contains('Парка'));
+  });
+
   test('404, 403, 409 и 5xx', () {
     expect(mapHttpError(404, null), isA<NotFoundException>());
     expect(mapHttpError(403, null), isA<ForbiddenException>());

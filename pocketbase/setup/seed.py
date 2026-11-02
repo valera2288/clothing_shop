@@ -152,7 +152,7 @@ def main():
             for size in random.sample(SIZES, 4):
                 variants.append(rec("product_variants", {
                     "product": p["id"], "size": size, "color": color,
-                    "stock": random.choice([0, 2, 5, 8, 15, 30])}))
+                    "stock": 100}))
     # один товар снят с витрины (мягкое удаление) и один «неактивный»
     admin("PATCH", f"/api/collections/products/records/{products[-1]['id']}", {"deleted": True})
     admin("PATCH", f"/api/collections/products/records/{products[-2]['id']}", {"active": False})
@@ -194,6 +194,10 @@ def main():
                 "eta": (shipped + timedelta(days=method["days"])).strftime("%Y-%m-%d 00:00:00.000Z"),
             })
             track_n += 1
+    # остатки задаются после заказов: серверный хук списывает остаток по позициям
+    for v in variants:
+        admin("PATCH", f"/api/collections/product_variants/records/{v['id']}",
+              {"stock": random.choice([0, 2, 5, 8, 15, 30])})
     print("данные загружены")
 
 

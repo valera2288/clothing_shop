@@ -1,6 +1,7 @@
 import 'package:clothing_shop/core/api_client.dart';
 import 'package:clothing_shop/core/api_exceptions.dart';
 import 'package:clothing_shop/models/list_query.dart';
+import 'package:clothing_shop/repositories/entity_repository.dart';
 import 'package:clothing_shop/repositories/pb/pb_repositories.dart';
 import 'package:clothing_shop/repositories/pb/pb_repository.dart';
 import 'package:dio/dio.dart';
@@ -60,6 +61,24 @@ void main() {
       final f = repo
           .buildFilter(const ListQuery().withFilter('priceFrom', '1;drop'))!;
       expect(f, isNot(contains('price')));
+    });
+
+    test('NaN, Infinity и дата без дефисов не попадают в фильтр', () {
+      final repo =
+          PbOrderRepository(_dio(FakeAdapter((_) => FakeAdapter.json({}))));
+      final products =
+          PbProductRepository(_dio(FakeAdapter((_) => FakeAdapter.json({}))));
+      expect(
+          products
+              .buildFilter(const ListQuery().withFilter('priceFrom', 'NaN')),
+          isNot(contains('NaN')));
+      expect(
+          products
+              .buildFilter(const ListQuery().withFilter('priceTo', 'Infinity')),
+          isNot(contains('Infinity')));
+      final f = repo
+          .buildFilter(const ListQuery().withFilter('dateFrom', '20261101'));
+      expect(f, isNull);
     });
 
     test('режим «удалённые» показывает и удалённые записи', () {
@@ -143,6 +162,46 @@ void main() {
         'Такое значение уже существует',
       )),
     );
+  });
+
+  test('оформление заказа — один пакетный запрос: заказ и позиции вместе',
+      () async {
+    final adapter = FakeAdapter((o) => FakeAdapter.json([
+          {
+            'status': 200,
+            'body': {
+              'id': 'o1',
+              'user': 'u',
+              'address': 'a',
+              'delivery_method': 'd',
+              'status': 'new',
+              'payment': 'card',
+              'total': 100,
+            },
+          },
+          {
+            'status': 200,
+            'body': {'id': 'i1'}
+          },
+          {
+            'status': 200,
+            'body': {'id': 'i2'}
+          },
+        ]));
+    final order = await PbOrderRepository(_dio(adapter)).place(const OrderDraft(
+      userId: 'u',
+      addressId: 'a',
+      deliveryMethodId: 'd',
+      payment: 'card',
+      total: 100,
+      lines: [OrderLine('v1', 1, 50), OrderLine('v2', 2, 25)],
+    ));
+    expect(adapter.requests, hasLength(1));
+    expect(adapter.requests.single.path, '/batch');
+    final reqs = (adapter.requests.single.data as Map)['requests'] as List;
+    expect(reqs, hasLength(3));
+    expect((reqs[1] as Map)['body']['order'], (reqs[0] as Map)['body']['id']);
+    expect(order.id, 'o1');
   });
 
   test('карточка несуществующей записи — null, а не исключение', () async {

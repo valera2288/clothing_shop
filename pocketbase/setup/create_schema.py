@@ -192,14 +192,6 @@ def main():
     ], [unique("collections", "title")], **catalog_rules)
 
     # ---- product_variants (N:1 products) ----------------------------------
-    stock_rule = (
-        f'{ADMIN} || ({MANAGER} || {CUSTOMER}) '
-        '&& @request.body.product:isset = false '
-        '&& @request.body.size:isset = false '
-        '&& @request.body.color:isset = false '
-        # покупатель может только уменьшать остаток (покупка)
-        f'&& ({MANAGER} || @request.body.stock < stock)'
-    )
     create("product_variants", [
         relation("product", products, cascade=True),
         select("size", ["XS", "S", "M", "L", "XL", "XXL"]),
@@ -208,7 +200,7 @@ def main():
         boolean("deleted"),
     ], [unique("product_variants", "product", "size", "color")],
         listRule=CATALOG_VISIBLE, viewRule=CATALOG_VISIBLE,
-        createRule=ADMIN, updateRule=stock_rule, deleteRule=ADMIN)
+        createRule=ADMIN, updateRule=ADMIN, deleteRule=ADMIN)
     variants_id = admin("GET", "/api/collections/product_variants")["id"]
 
     # ---- orders (N:1 users, addresses, delivery_methods) ------------------
@@ -228,7 +220,8 @@ def main():
         createRule=(f'{CUSTOMER} && @request.body.user = @request.auth.id '
                     '&& @request.body.address.user = @request.auth.id '
                     '&& @request.body.status = "new"'),
-        updateRule=(f'{MANAGER} || (user = @request.auth.id '
+        # отменённый заказ менеджер не оживляет: остаток уже возвращён на склад
+        updateRule=(f'({MANAGER} && status != "cancelled") || (user = @request.auth.id '
                     '&& status = "new" '
                     '&& @request.body.status = "cancelled")'),
         deleteRule=STAFF)
@@ -242,8 +235,9 @@ def main():
     ], [unique("order_items", "order", "variant")],
         listRule=f"order.user = @request.auth.id || {STAFF}",
         viewRule=f"order.user = @request.auth.id || {STAFF}",
+        # позиции добавляются только в свой новый заказ
         createRule=(f'{CUSTOMER} && @request.body.order.user = '
-                    '@request.auth.id'),
+                    '@request.auth.id && @request.body.order.status = "new"'),
         updateRule=STAFF, deleteRule=STAFF)
 
     # ---- deliveries (1:1 с orders) ----------------------------------------
@@ -260,6 +254,9 @@ def main():
         viewRule=f"order.user = @request.auth.id || {STAFF}",
         createRule=MANAGER, updateRule=MANAGER, deleteRule=MANAGER)
 
+    # Пакетный запрос (/api/batch) выполняется в одной транзакции: заказ с позициями
+    admin("PATCH", "/api/settings", {"batch": {"enabled": True, "maxRequests": 50,
+                                                "timeout": 3, "maxBodySize": 0}})
     print("схема создана")
 
 

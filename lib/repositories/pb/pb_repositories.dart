@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:dio/dio.dart';
 
 import '../../core/api_exceptions.dart';
@@ -22,12 +24,21 @@ String? _eq(ListQuery q, String key, String field) =>
     q.filter(key) == null ? null : '$field = ${pbQuote(q.filter(key)!)}';
 
 /// Число из фильтра; нечисловое значение игнорируется.
-num? _num(ListQuery q, String key) => num.tryParse(q.filter(key) ?? '');
+num? _num(ListQuery q, String key) {
+  final n = num.tryParse(q.filter(key) ?? '');
+  // «NaN» и «Infinity» разбираются как числа, но фильтр с ними сервер отклонит
+  return n != null && n.isFinite ? n : null;
+}
 
 /// Дата из фильтра (`2026-10-31`) в формате PocketBase.
 String? _date(ListQuery q, String key, {bool endOfDay = false}) {
   final v = q.filter(key);
-  if (v == null || DateTime.tryParse(v) == null) return null;
+  // Только формат из адреса `2026-10-31`: DateTime.tryParse принимает и «20261031»
+  if (v == null ||
+      !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(v) ||
+      DateTime.tryParse(v) == null) {
+    return null;
+  }
   return '${v.substring(0, 10)} ${endOfDay ? '23:59:59' : '00:00:00'}';
 }
 
@@ -273,88 +284,61 @@ class PbOrderRepository extends PbRepository<Order> implements OrderRepository {
             .toList();
       });
 
-  /// При отмене товары возвращаются на склад. Правила сервера разрешают это
-  /// только менеджеру: у покупателя возврат остатка отклоняется, и отмена
-  /// остаётся без возврата (менеджер вернёт остаток вручную).
+  /// Возврат товаров на склад при отмене выполняет серверный хук
+  /// (pocketbase/pb_hooks/shop.pb.js), поэтому клиенту достаточно сменить статус.
   @override
-  Future<Order> changeStatus(String id, String status) async {
-    final order = await update(id, {'status': status});
-    if (status == 'cancelled') {
-      for (final item in await itemsOf(id)) {
-        try {
-          final v = await guard(() => dio.get<Map<String, dynamic>>(
-              '/collections/product_variants/records/${item.variantId}'));
-          final stock = (v.data?['stock'] as num?)?.toInt() ?? 0;
-          await guard(() => dio.patch(
-                '/collections/product_variants/records/${item.variantId}',
-                data: {'stock': stock + item.quantity},
-              ));
-        } on ApiException {
-          // Нет прав вернуть остаток: заказ при этом уже отменён
-        }
-      }
-    }
-    return order;
-  }
+  Future<Order> changeStatus(String id, String status) =>
+      update(id, {'status': status});
 
+  /// Оформление одним пакетным запросом (`POST /batch`): заказ и все его
+  /// позиции создаются в одной транзакции. Остаток списывает и итог пересчитывает
+  /// серверный хук; при нехватке товара откатывается весь заказ.
   @override
   Future<Order> place(OrderDraft draft) async {
-    // 1. Остатки перечитываются непосредственно перед оформлением:
-    //    корзина могла устареть
-    final variants = await guard(() async {
-      final filter =
-          draft.lines.map((l) => 'id = ${pbQuote(l.variantId)}').join(' || ');
-      final r = await dio.get<Map<String, dynamic>>(
-        '/collections/product_variants/records',
-        queryParameters: {'perPage': 200, 'filter': filter},
-      );
-      return {
-        for (final v in (r.data?['items'] as List? ?? const []))
-          (v as Map)['id'] as String: (v['stock'] as num).toInt(),
-      };
+    const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    final rnd = Random.secure();
+    // Идентификатор задаётся заранее, чтобы позиции могли сослаться на заказ
+    final id =
+        List.generate(15, (_) => alphabet[rnd.nextInt(alphabet.length)]).join();
+    final requests = [
+      {
+        'method': 'POST',
+        'url': '/api/collections/orders/records?expand=$expand',
+        'body': {
+          'id': id,
+          'user': draft.userId,
+          'address': draft.addressId,
+          'delivery_method': draft.deliveryMethodId,
+          'status': 'new',
+          'payment': draft.payment,
+          'total': draft.total,
+          'comment': draft.comment,
+          'ordered_at': DateTime.now().toUtc().toIso8601String(),
+        },
+      },
+      for (final l in draft.lines)
+        {
+          'method': 'POST',
+          'url': '/api/collections/order_items/records',
+          'body': {
+            'order': id,
+            'variant': l.variantId,
+            'quantity': l.quantity,
+            'price': l.price,
+          },
+        },
+    ];
+    final results = await guard(() async {
+      final r =
+          await dio.post<List<dynamic>>('/batch', data: {'requests': requests});
+      return r.data ?? const [];
     });
-    for (final l in draft.lines) {
-      final stock = variants[l.variantId];
-      if (stock == null || stock < l.quantity) {
-        throw const ConflictException(
-            'Некоторых товаров нет в нужном количестве. Обновите корзину.');
-      }
+    final first = results.isEmpty ? null : results.first as Map;
+    final body = first?['body'];
+    if (body is! Map<String, dynamic>) {
+      throw const ServerException('Сервер вернул пустой ответ.');
     }
-
-    // 2. Заказ и позиции. Если позиция не создалась, заказ отменяется,
-    //    чтобы в системе не осталось пустого заказа
-    final order = await create({
-      'user': draft.userId,
-      'address': draft.addressId,
-      'delivery_method': draft.deliveryMethodId,
-      'status': 'new',
-      'payment': draft.payment,
-      'total': draft.total,
-      'comment': draft.comment,
-      'ordered_at': DateTime.now().toUtc().toIso8601String(),
-    });
-    try {
-      for (final l in draft.lines) {
-        await guard(() => dio.post(
-              '/collections/order_items/records',
-              data: {
-                'order': order.id,
-                'variant': l.variantId,
-                'quantity': l.quantity,
-                'price': l.price,
-              },
-            ));
-        await guard(() => dio.patch(
-              '/collections/product_variants/records/${l.variantId}',
-              data: {'stock': variants[l.variantId]! - l.quantity},
-            ));
-      }
-    } on ApiException {
-      await update(order.id, {'status': 'cancelled'})
-          .then((_) {}, onError: (_) {});
-      rethrow;
-    }
-    return order;
+    return fromJson(body);
   }
 }
 
