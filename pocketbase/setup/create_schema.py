@@ -135,7 +135,7 @@ def main():
         listRule=f"user = @request.auth.id || {STAFF}",
         viewRule=f"user = @request.auth.id || {STAFF}",
         createRule=f"{CUSTOMER} && @request.body.user = @request.auth.id",
-        updateRule="user = @request.auth.id",
+        updateRule="user = @request.auth.id && @request.body.user:isset = false",
         deleteRule=f"user = @request.auth.id || {ADMIN}")
 
     # ---- справочники каталога ---------------------------------------------
@@ -238,7 +238,10 @@ def main():
         # позиции добавляются только в свой новый заказ
         createRule=(f'{CUSTOMER} && @request.body.order.user = '
                     '@request.auth.id && @request.body.order.status = "new"'),
-        updateRule=STAFF, deleteRule=STAFF)
+        # правка позиций - пока заказ не отправлен; заказ позиции менять нельзя
+        updateRule=(f'{STAFF} && @request.body.order:isset = false && (order.status = "new" '
+                    '|| order.status = "paid" || order.status = "packed")'),
+        deleteRule=STAFF)
 
     # ---- deliveries (1:1 с orders) ----------------------------------------
     create("deliveries", [

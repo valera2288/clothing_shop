@@ -970,7 +970,7 @@ class Entities {
     ],
     fields: const [
       FieldSpec('order', 'Заказ', FieldKind.relation,
-          required: true, lookup: 'orders'),
+          required: true, lookup: 'orders', createOnly: true),
       FieldSpec('variant', 'Вариант товара', FieldKind.relation,
           required: true, lookup: 'variants'),
       FieldSpec('quantity', 'Количество', FieldKind.integer,
