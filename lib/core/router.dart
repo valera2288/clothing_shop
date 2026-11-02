@@ -68,7 +68,10 @@ GoRouter buildRouter(AuthNotifier auth) {
           GoRoute(
             path: 'new',
             redirect: def.editable ? need(def.manage) : (c, s) => '/forbidden',
-            builder: (c, s) => EntityFormScreen<T>(def: def),
+            builder: (c, s) => EntityFormScreen<T>(
+              def: def,
+              prefill: s.uri.queryParameters,
+            ),
           ),
           GoRoute(
             path: ':id',

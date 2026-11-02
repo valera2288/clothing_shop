@@ -86,6 +86,10 @@ class ListNotifier<T> extends ChangeNotifier {
     _safeNotify();
   }
 
+  void deselect(String id) {
+    if (_selected.remove(id)) _safeNotify();
+  }
+
   void clearSelection() {
     if (_selected.isEmpty) return;
     _selected.clear();

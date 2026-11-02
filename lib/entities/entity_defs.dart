@@ -152,6 +152,7 @@ class Entities {
       FieldSpec('role', 'Роль', FieldKind.select,
           required: true, options: roleLabels, initial: 'customer'),
     ],
+    canDeleteItem: (c, u) => u.id != c.read<AuthNotifier>().user?.id,
     initialValues: (u) => {
       'name': u.name,
       'email': u.email,
@@ -870,7 +871,7 @@ class Entities {
       'status': x.status,
       'payment': x.payment,
       'total': '${x.total}',
-      'ordered_at': _ymd(x.orderedAt),
+      'ordered_at': x.orderedAt?.toUtc().toIso8601String() ?? '',
       'comment': x.comment,
     },
     detailExtra: (c, x) => OrderPanel(order: x, staff: true),

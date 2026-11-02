@@ -209,7 +209,8 @@ class _OrderPanelState extends State<OrderPanel> {
                           ),
                           if (widget.staff)
                             FilledButton(
-                              onPressed: () => context.go('/deliveries/new'),
+                              onPressed: () => context
+                                  .go('/deliveries/new?order=${order.id}'),
                               child: const Text('Создать'),
                             ),
                         ],

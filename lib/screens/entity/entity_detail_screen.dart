@@ -114,7 +114,7 @@ class _EntityDetailScreenState<T> extends State<EntityDetailScreen<T>> {
                       onPressed: () =>
                           context.go('${def.path}/${def.id(item)}/edit'),
                     ),
-                  if (def.canDeleteWithManage)
+                  if (def.canDeleteWithManage && def.deletable(context, item))
                     IconButton(
                       icon: const Icon(Icons.delete),
                       tooltip: 'Удалить',

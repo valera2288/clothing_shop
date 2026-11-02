@@ -133,6 +133,9 @@ class EntityDef<T> {
   final Permission? manage;
   final bool canDeleteWithManage;
 
+  /// Можно ли удалить конкретную запись (администратор не удаляет себя).
+  final bool Function(BuildContext context, T item)? canDeleteItem;
+
   final EntityRepository<T> Function(BuildContext context) repo;
   final String Function(T item) id;
   final String Function(T item) itemTitle;
@@ -200,7 +203,11 @@ class EntityDef<T> {
     this.gridCard,
     this.hiddenFilters = const {},
     this.canDeleteWithManage = true,
+    this.canDeleteItem,
   });
+
+  bool deletable(BuildContext context, T item) =>
+      canDeleteItem?.call(context, item) ?? true;
 
   Set<String> get filterKeys =>
       {...filters.map((f) => f.key), ...hiddenFilters};

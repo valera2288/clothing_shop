@@ -89,7 +89,12 @@ class _EntityListScreenState<T> extends State<EntityListScreen<T>> {
   }
 
   Future<void> _deleteSelected() async {
+    // Записи, которые удалять нельзя (например, свою учётную запись), пропускаются
+    for (final item in _notifier.result.items) {
+      if (!def.deletable(context, item)) _notifier.deselect(def.id(item));
+    }
     final count = _notifier.selected.length;
+    if (count == 0) return;
     final ok = await confirmDialog(
       context,
       title: 'Удалить выбранные?',
@@ -163,7 +168,7 @@ class _EntityListScreenState<T> extends State<EntityListScreen<T>> {
           tooltip: 'Редактировать',
           onPressed: () => context.go('${def.path}/${def.id(item)}/edit'),
         ),
-      if (manage && def.canDeleteWithManage)
+      if (manage && def.canDeleteWithManage && def.deletable(context, item))
         IconButton(
           icon: const Icon(Icons.delete),
           tooltip: 'Удалить',

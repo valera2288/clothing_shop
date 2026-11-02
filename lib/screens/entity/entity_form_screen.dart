@@ -14,7 +14,15 @@ import '../../widgets/state_views.dart';
 class EntityFormScreen<T> extends StatefulWidget {
   final EntityDef<T> def;
   final String? id;
-  const EntityFormScreen({super.key, required this.def, this.id});
+
+  /// Значения связей из адреса (`/deliveries/new?order=…`) для новой записи.
+  final Map<String, String> prefill;
+  const EntityFormScreen({
+    super.key,
+    required this.def,
+    this.id,
+    this.prefill = const {},
+  });
 
   @override
   State<EntityFormScreen<T>> createState() => _EntityFormScreenState<T>();
@@ -39,6 +47,9 @@ class _EntityFormScreenState<T> extends State<EntityFormScreen<T>> {
     } else {
       for (final f in def.fields) {
         if (f.initial != null) _values[f.name] = f.initial;
+        if (f.kind == FieldKind.relation && widget.prefill[f.name] != null) {
+          _values[f.name] = widget.prefill[f.name];
+        }
       }
     }
   }
@@ -58,7 +69,11 @@ class _EntityFormScreenState<T> extends State<EntityFormScreen<T>> {
           body[f.name] = List<String>.from((v as List?) ?? const []);
         case FieldKind.date:
           final text = '${v ?? ''}';
-          body[f.name] = text.isEmpty ? '' : '$text 00:00:00.000Z';
+          // Полное значение с временем (из записи) сохраняется как есть,
+          // выбранная в календаре дата дополняется полуночью
+          body[f.name] = text.isEmpty
+              ? ''
+              : (text.length > 10 ? text : '$text 00:00:00.000Z');
         case FieldKind.password:
           body[f.name] = _password;
           body['${f.name}Confirm'] = _password;

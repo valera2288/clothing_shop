@@ -102,7 +102,7 @@ def main():
         # Сменить роль может только администратор
         "updateRule": (f'{ADMIN} || (id = @request.auth.id '
                        f'&& @request.body.role:isset = false)'),
-        "deleteRule": ADMIN,
+        "deleteRule": f"{ADMIN} && id != @request.auth.id",
         "indexes": [
             "CREATE UNIQUE INDEX `idx_tokenKey_users` ON `users` (`tokenKey`)",
             "CREATE UNIQUE INDEX `idx_email_users` ON `users` (`email`) "
